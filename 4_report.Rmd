@@ -1,0 +1,61 @@
+---
+title: "Top Cartelized Drugs' Price over Time"
+output:
+  html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(tidyverse)
+```
+
+```{r load_data, include=FALSE}
+top9_price_series <- readRDS("to_chart_final_top_cartelized.Rda")
+all_top9_drugs <- top9_price_series %>% group_by(SIMPSUBSTANCENAME) %>% summarize() %>% ungroup()
+
+top13_nadac_appl_mthly <- readRDS("nadac_appl_mthly_top_cartelized.Rda")
+all_top13_drugs <- top13_nadac_appl_mthly %>% group_by(SIMPSUBSTANCENAME) %>% summarize() %>% ungroup()
+```
+
+### 1. Scatter Plots of Top Cartelized Drugs' Mean Price over Time
+Scatter plots of selected drugs from the list of top cartelized drugs obtained from literature are presented as below. 
+Some definite trends can be seen in mean price unit over time. However, there are also the occasional outliers. This is due to the fact that price data for different drug products is not reported to the system at the same consistent intervals (some monthly, some every 4 months, etc.). There is thus missing data within the dataset across time, and when mean price is aggregated over month for each drug, the occasional inclusion of certain drugs offering would make the mean price for that month jump drastically.
+For subsequent analysis, backfilling missing data must be carried out to overcome this complication. 
+
+```{r top9_charts, echo=FALSE}
+selected_charts <- c(1,5,6,7)
+for (i in selected_charts) {
+  title <- all_top9_drugs$SIMPSUBSTANCENAME[i]
+  my_plot <- top9_price_series %>% filter(grepl(title, SIMPSUBSTANCENAME)) %>%
+    ggplot(aes(Effective_Month, Mean_NADAC)) +
+    geom_point() +
+    ggtitle(title) +
+    labs(x = "Time", y = "Mean Price per Unit") +
+    scale_x_date(date_breaks = "4 months", date_labels = "%Y-%m") +
+    theme(axis.text.x = element_text(angle = 90, size = 10, vjust = 0.5))
+  print(my_plot)
+}
+```
+
+### 2. Scatter Plots of Top Cartelized Drugs' Price over Time by Applicant
+To further investigate market competition, selected scatter plots are produced for top cartelized drug prices, this time segregated by applicants (i.e. manufacturers). 
+It can be observed that for each market defined by a specific active ingredient/drug molecule, there is very clear segmentation visible in mean price. This is due to the fact that while the active ingredient may be the same chemical molecule across different manufacturers, manufacturers do produce the drugs in different dosage and forms.   
+
+```{r top13_charts, echo=FALSE}
+selected_charts <- c(1,2,3,4,5,6,9,11,12)
+for (i in selected_charts) {
+  title <- all_top13_drugs$SIMPSUBSTANCENAME[i]
+  my_plot <- top13_nadac_appl_mthly %>% filter(grepl(title, SIMPSUBSTANCENAME)) %>%
+    ggplot(aes(Effective_Month, NADAC_Per_Unit, colour = Applicant)) +
+    geom_point() +
+    ggtitle(title) +
+    labs(x = "Time", y = "Mean Price per Unit") +
+    scale_x_date(date_breaks = "4 months", date_labels = "%Y-%m") +
+    theme(axis.text.x = element_text(angle = 90, size = 10, vjust = 0.5), legend.position="bottom", legend.text=element_text(size=5))
+  print(my_plot)
+}
+```
+
+### 3.Conclusion
+This project demonstrates the feasibility of churning out price time-series data from publicly available information to produce evidence for collusion. There were two significant complications encountered: missing data across time requiring specific back-filling techniques, and manual adjustments for drug's names. While no definite conclussion regarding collusion can be reached at this time, the methodology demonstrates potential in churning out this data with more refinements. 

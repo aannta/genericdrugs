@@ -1,0 +1,104 @@
+---
+title: "2_price_mapping"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999) # explicitly disables scientific notation
+```
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(fuzzyjoin)
+```
+
+Importing Data from the following:
+* NADAC website: https://dev.socrata.com/foundry/data.medicaid.gov/a4y5-998d downloaded as of 2020-02-06
+Associated information:
+Dataset Identifier: a4y5-998d
+Total Rows: 7822360
+Source Domain: data.medicaid.gov
+Created: 11/7/2014, 10:54:00 AM
+Last Updated: 2/4/2020, 10:57:49 AM
+Category: Drug Pricing and Payment
+Attribution: Centers for Medicare and Medicaid Services
+License: Public Domain U.S. Government
+Owner: Medicaid.gov
+Endpoint Version: 2.1
+
+* Crosswalk file is obtained from https://data.nber.org/data/ndc-to-labeler-code-product-code-crosswalk.html
+
+```{r}
+nadac <- read.csv(file.path("input","NADAC_20200206.csv"), header = TRUE)
+# if order by date is needed:
+# nadac <- nadac[order(as.Date(nadac$Effective_Date, format="%m/%d/%Y")),]
+crosswalk <- read.csv(file.path("input","crosswalk.csv"), header = TRUE)
+ndc_mfg <- readRDS("final.Rda")
+
+# select for relevant columns from ndc_mfg
+# ndc_mfg <- ndc_mfg %>% mutate(NDC_lookup = str_replace(PRODUCTNDC, "-", ""))
+draft_ndc_mfg <- ndc_mfg %>% 
+  select(PRODUCTNDC, LABELERNAME, Applicant, Applicant_Full_Name, NONPROPRIETARYNAME, DOSAGEFORMNAME, SUBSTANCENAME) %>%
+  group_by(PRODUCTNDC, LABELERNAME, Applicant, Applicant_Full_Name, NONPROPRIETARYNAME, DOSAGEFORMNAME, SUBSTANCENAME) %>%
+  summarize()
+draft_ndc_mfg <- draft_ndc_mfg %>%
+  mutate(MOLFORM = toupper(paste0(NONPROPRIETARYNAME, "_", DOSAGEFORMNAME)))
+
+# convert crosswalk's NDC to string
+crosswalk <- crosswalk %>% mutate(ndc = paste0(ndc))
+
+# convert draft_nadac's NDC to string
+draft_nadac <- nadac %>% 
+  mutate(NDC = paste0(NDC)) %>%
+  mutate(Effective_Date = as.Date(Effective_Date, format = "%m/%d/%Y"))
+
+# subset nadac data into old (11 digits) or new (<10 digits)
+draft_nadac_old <- draft_nadac %>% 
+  filter(str_length(NDC) == 11)
+
+# for new NDCs in nadac, pad with 0's to 10 digit, discard last 2 digits to obtain xxxx-xxxx NDC codes
+draft_nadac_new <- draft_nadac %>% 
+  filter(str_length(NDC) < 11) %>%
+  mutate(NDC = str_pad(NDC, 10, pad = "0")) %>%
+  mutate(NDC = paste0(substring(NDC, 1,4), "-", substring(NDC,5,8)))
+# left_join nadac_new with mfg information
+draft_nadac_mfg_new <- left_join(draft_nadac_new, draft_ndc_mfg, by = c("NDC" = "PRODUCTNDC"))
+
+# for old NDCs in nadac, check through possible combinations and cross-check valid lblcode/prodcode with crosswalk
+draft_nadac_old <- draft_nadac_old %>%
+  mutate(NDC_lbl = ifelse(substring(NDC, 1, 4) %in% crosswalk$lblcode, substring(NDC, 1, 4), 
+                          ifelse(substring(NDC,1,5) %in% crosswalk$lblcode, substring(NDC, 1, 5), "NA"))) %>% 
+        # looks like there is no 4-4-2 config in this dataset
+  mutate(NDC_prod = ifelse(str_length(NDC_lbl) == 4, substring(NDC, 5, 8),
+                           ifelse((str_length(NDC_lbl) == 5) & (substring(NDC, 6, 6) == "0"), substring(NDC,7,9), 
+                           ifelse((str_length(NDC_lbl) == 5) & (substring(NDC, 6, 6) != "0"), substring(NDC,6,9), "NA"))))
+draft_nadac_old <- draft_nadac_old %>%
+  mutate(NDC_lookup = paste0(NDC_lbl, "-", NDC_prod))
+
+# left_join nadac_old with mfg information
+draft_nadac_mfg_old <- left_join(draft_nadac_old, draft_ndc_mfg, by = c("NDC_lookup" = "PRODUCTNDC"))
+
+# combine resultant nadac dataframe
+draft_nadac_mfg_old <- draft_nadac_mfg_old %>%
+  select(-one_of(c("NDC_lbl", "NDC_prod", "NDC_lookup")))
+draft_nadac_mfg <- rbind(draft_nadac_mfg_old, draft_nadac_mfg_new)
+
+```
+
+Logic for parsing 11-digit NDC in NADAC:
+Assuming it is 4-4-2 e.g. 2465-8030-410
+Look up 2465: if 2465 is a valid lblcode then look up based on 4-4-2 config, if 2465 doesn't exist then NA
+When we did this, turns out there is no 4-4-2 config in existing NADAC
+
+Assuming it is 5-x-x e.g. 24658-0304-10
+if the 6th digit is '0' then it is 5-3-2, but format to look up is 24658-304 (so drop the '0' at the 6th position)
+if the 6th digit is not '0' then it is 5-4-1 and format to look up is 24658-xxxx (no need to drop any '0')
+the overall result is still that the final 2 digits will be dropped. They constitute the package code, padded with leading 0's or not.
+
+```{r}
+nadac_mfg <- draft_nadac_mfg
+saveRDS(nadac_mfg,file = "nadac_mfg.Rda")
+```
+
