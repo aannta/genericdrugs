@@ -1,7 +1,9 @@
 ---
 title: "Top Cartelized Drugs' Price over Time"
+geometry: margin=2cm
 output:
-  html_document
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
