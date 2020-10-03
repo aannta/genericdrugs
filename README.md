@@ -36,4 +36,4 @@ For each of the top cartelized drugs, mean unit price is plotted over time, with
 
 Input: to_chart_final_top_cartelized.Rda, nadac_appl_mthly_top_cartelized.Rda    
 
-Output: report.html for the final report
+Output: 4_report.pdf for the final report
